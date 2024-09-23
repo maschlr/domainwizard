@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Email</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #7f8c8d;
+            border-top: 1px solid #bdc3c7;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Latest Updates</h1>
+        <p>Hi {{ domain_search.name }},</p>
+        <p>Here are the latest updates for <a href="{{'https://urlwiz.io/requests/%s' % domain_search.uuid}}">your domain search:</a></p>
+
+        <ul>
+        {% for listing in updated_listings %}
+            <li><a href="{{ listing.link}}">{{ listing.url }}</a></li>
+        {% endfor %}
+        </ul>
+
+        <p>We hope you find these updates useful!</p>
+
+        <div class="footer">
+            <p>You're receiving this email because you subscribed to updates of your domain search. If you no longer wish to receive updates, just answer to this email. We're happy to hear your feedback!</p>
+        </div>
+    </div>
+</body>
+</html>
