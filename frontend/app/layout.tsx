@@ -4,6 +4,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import GoogleAnalytics from "@/components/GoogleAnalytics";
 import Link from "next/link";
+import { Suspense } from "react";
 
 const geistSans = localFont({
 	src: "./fonts/GeistVF.woff",
@@ -47,7 +48,9 @@ export default function RootLayout({
 				</header>
 				{children}
 				<StickyButtons />
-				<GoogleAnalytics />
+				<Suspense fallback={null}>
+					<GoogleAnalytics />
+				</Suspense>
 			</body>
 		</html>
 	);

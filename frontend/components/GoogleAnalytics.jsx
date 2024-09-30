@@ -2,7 +2,7 @@
 
 import { usePathname, useSearchParams } from "next/navigation";
 import Script from "next/script";
-import { Suspense, useEffect } from "react";
+import { useEffect } from "react";
 import ReactGA from "react-ga4";
 
 const GA_MEASUREMENT_ID = "G-B2NXZBR1TJ";
@@ -21,7 +21,7 @@ export default function GoogleAnalytics() {
 	}, [pathname, searchParams]);
 
 	return (
-		<Suspense>
+		<>
 			<Script
 				strategy="afterInteractive"
 				src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
@@ -36,6 +36,6 @@ export default function GoogleAnalytics() {
           });
         `}
 			</Script>
-		</Suspense>
+		</>
 	);
 }
