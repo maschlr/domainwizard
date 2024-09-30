@@ -521,7 +521,7 @@ class OpenAIEmbeddingBatchRequest(Base):
                 result.append(batch_request)
         return result
 
-    def download(self, session: Session, retry=1, max_retries=3, batch_size=10000):
+    def download(self, session: Session, retry=1, max_retries=3, batch_size=5000):
         download_url = self.output_file_id_download_url
         embedding_file_response = requests.get(download_url, stream=True, timeout=5)
         # Sizes in bytes.
