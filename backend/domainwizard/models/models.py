@@ -527,7 +527,6 @@ class OpenAIEmbeddingBatchRequest(Base):
         # Sizes in bytes.
         total_size = int(embedding_file_response.headers.get("content-length", 0))
         block_size = 1024
-        linecount = 0
         with tempfile.TemporaryFile() as buffer:
             try:
                 with tqdm(
@@ -539,20 +538,17 @@ class OpenAIEmbeddingBatchRequest(Base):
                     for data in embedding_file_response.iter_content(block_size):
                         progress_bar.update(len(data))
                         buffer.write(data)
-                        linecount += 1
             except (IncompleteRead, ConnectionTimeoutError):
                 if retry < max_retries:
                     return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
                 else:
                     raise
 
-            with tqdm(desc=f"Inserting embeddings for {self.batch_id}", total=linecount) as pbar:
-                for buffer_batch in batched(self._yield_embedding_data(buffer), batch_size):
-                    session.execute(
-                        update(Listing),
-                        [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in buffer_batch],
-                    )
-                    pbar.update(len(buffer_batch))
+            for buffer_batch in batched(self._yield_embedding_data(buffer), batch_size):
+                session.execute(
+                    update(Listing),
+                    [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in buffer_batch],
+                )
 
             self.status = BatchRequestStatus.FINALIZED
 
