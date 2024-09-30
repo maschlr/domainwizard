@@ -4,6 +4,7 @@ SQLAlchemy
 psycopg2-binary
 alembic
 openai
+anthropic
 pgvector
 requests
 python-ulid
