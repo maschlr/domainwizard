@@ -5,7 +5,21 @@ import io
 import json
 import re
 import time
-from itertools import batched
+
+try:
+    from itertools import batched
+except ImportError:
+    from itertools import islice
+
+    def batched(iterable, n):
+        # batched('ABCDEFG', 3) → ABC DEF G
+        if n < 1:
+            raise ValueError("n must be at least one")
+        iterator = iter(iterable)
+        while batch := tuple(islice(iterator, n)):
+            yield batch
+
+
 from typing import Any, Iterable, List, Optional, Self, Sequence, Tuple
 
 import openai
