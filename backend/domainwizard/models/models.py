@@ -4,10 +4,11 @@ import hashlib
 import io
 import json
 import re
+import tempfile
 import time
 
 try:
-    from itertools import batched
+    from itertools import batched  # type: ignore
 except ImportError:
     from itertools import islice
 
@@ -520,39 +521,42 @@ class OpenAIEmbeddingBatchRequest(Base):
                 result.append(batch_request)
         return result
 
-    def download(self, session: Session, retry=1, max_retries=3):
+    def download(self, session: Session, retry=1, max_retries=3, batch_size=10000):
         download_url = self.output_file_id_download_url
         embedding_file_response = requests.get(download_url, stream=True, timeout=5)
         # Sizes in bytes.
         total_size = int(embedding_file_response.headers.get("content-length", 0))
         block_size = 1024
-        buffer = io.BytesIO()
-        try:
-            with tqdm(
-                total=total_size,
-                unit="B",
-                unit_scale=True,
-                desc=f"Downloading {self.batch_id}",
-            ) as progress_bar:
-                for data in embedding_file_response.iter_content(block_size):
-                    progress_bar.update(len(data))
-                    buffer.write(data)
-        except (IncompleteRead, ConnectionTimeoutError):
-            if retry < max_retries:
-                return self.download(session, retry=retry + 1, max_retries=max_retries)
-            else:
-                raise
+        linecount = 0
+        with tempfile.TemporaryFile() as buffer:
+            try:
+                with tqdm(
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    desc=f"Downloading {self.batch_id}",
+                ) as progress_bar:
+                    for data in embedding_file_response.iter_content(block_size):
+                        progress_bar.update(len(data))
+                        buffer.write(data)
+                        linecount += 1
+            except (IncompleteRead, ConnectionTimeoutError):
+                if retry < max_retries:
+                    return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
+                else:
+                    raise
 
-        session.execute(
-            update(Listing),
-            [
-                {"id": listing_id, "embeddings": embeddings}
-                for listing_id, embeddings in self._yield_embedding_data(buffer)
-            ],
-        )
-        self.status = BatchRequestStatus.FINALIZED
+            with tqdm(desc=f"Inserting embeddings for {self.batch_id}", total=linecount) as pbar:
+                for buffer_batch in batched(self._yield_embedding_data(buffer), batch_size):
+                    session.execute(
+                        update(Listing),
+                        [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in buffer_batch],
+                    )
+                    pbar.update(len(buffer_batch))
 
-    def _yield_embedding_data(self, buffer: io.BytesIO) -> Iterable[tuple[int, list[float]]]:
+            self.status = BatchRequestStatus.FINALIZED
+
+    def _yield_embedding_data(self, buffer: io.BufferedRandom) -> Iterable[tuple[int, list[float]]]:
         total = len(self.listings)
         with tqdm(total=total, desc=f"Processed lines in {self.batch_id}") as progress_bar:
             buffer.seek(0)
