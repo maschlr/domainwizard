@@ -3,6 +3,7 @@ uvicorn
 SQLAlchemy
 psycopg2-binary
 alembic
+openai
 pgvector
 requests
 python-ulid
