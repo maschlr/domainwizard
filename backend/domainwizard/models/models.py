@@ -191,8 +191,8 @@ class Listing(Base):
                 )
                 pbar.update(len(url_batch))
 
+        result_listing_id_to_url = {}
         if new_listing_urls:
-            result_listing_id_to_url = {}
             with tqdm(total=len(new_listing_urls), desc="Inserting new listings:") as pbar:
                 for url_batch in batched(new_listing_urls, batch_size):
                     new_listings = session.execute(
@@ -201,11 +201,6 @@ class Listing(Base):
                     )
                     result_listing_id_to_url.update({listing.id: listing.url for listing in new_listings})
                     pbar.update(len(url_batch))
-        else:
-            logger.info("Retrieving listings without embeddings that are not outdated")
-            query = select(cls.url).where(cls.batch_request_id.is_not(None))
-            previously_batched_urls = {url for url, in session.execute(query)}
-            result_listing_id_to_url = {db_url_to_id[url]: url for url in previously_batched_urls - urls_not_in_batch}
 
         return result_listing_id_to_url, urls_not_in_batch
 
