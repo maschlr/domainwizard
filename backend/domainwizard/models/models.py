@@ -21,7 +21,7 @@ except ImportError:
             yield batch
 
 
-from typing import Any, Iterable, List, Optional, Self, Sequence, Tuple
+from typing import Any, Iterable, Iterator, List, Optional, Self, Sequence, Tuple
 
 import openai
 import requests
@@ -112,7 +112,7 @@ class Listing(Base):
     )
 
     @classmethod
-    def upsert_batch(cls, session: Session, domaindata: dict[str, Any], batch_size=100000) -> dict[int, str]:
+    def upsert_batch(cls, session: Session, listings: Iterator[dict[str, Any]], batch_size=100000) -> dict[int, str]:
         """
         Upserts a batch of listings into the database
 
@@ -127,8 +127,8 @@ class Listing(Base):
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
         result_listing_id_to_url = {}
-        with tqdm(total=len(domaindata["data"]), desc="Processing godaddy data in batches:") as pbar:
-            for url_item_batch in batched(domaindata["data"], batch_size):
+        with tqdm(desc="Processing godaddy data in batches:") as pbar:
+            for url_item_batch in batched(listings, batch_size):
                 result_listing_id_to_url.update(
                     cls.process_items(session, url_to_id, url_item_batch, batch_size=batch_size // 5)
                 )
