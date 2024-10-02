@@ -531,7 +531,12 @@ class OpenAIEmbeddingBatchRequest(Base):
                 logger.error(f"Batch {batch_request.batch_id} failed!")
                 if now - created_at < dt.timedelta(days=2):
                     logger.warning(f"Batch {batch_request.batch_id} failed within last 48 hours, retrying")
-                    listing_id_to_url = ((listing.id, listing.url) for listing in batch_request.listings)
+                    listing_id_to_url = (
+                        (listing_id, listing_url)
+                        for listing_id, listing_url in session.execute(
+                            select(Listing.id, Listing.url).where(Listing.batch_request_id == batch_request.id)
+                        )
+                    )
                     cls.create_batch_requests(session, listing_id_to_url)
                 batch_request.status = BatchRequestStatus.FAILED
         return result
