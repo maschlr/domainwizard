@@ -567,6 +567,11 @@ class OpenAIEmbeddingBatchRequest(Base):
                 )
 
             self.status = BatchRequestStatus.FINALIZED
+            if self.output_file_id:
+                logger.info(
+                    f"Downloaded embeddings for {len(self.listings)} listings in {self.batch_id}. Deleting file {self.output_file_id}"
+                )
+                client.files.delete(self.output_file_id)
 
     def _yield_embedding_data(self, buffer: io.BufferedRandom) -> Iterable[tuple[int, list[float]]]:
         total = len(self.listings)
