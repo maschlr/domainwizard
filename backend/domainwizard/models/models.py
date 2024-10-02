@@ -112,7 +112,9 @@ class Listing(Base):
     )
 
     @classmethod
-    def upsert_batch(cls, session: Session, listings: Iterator[dict[str, Any]], batch_size=100000) -> dict[int, str]:
+    def upsert_batch(
+        cls, session: Session, listings: Iterator[dict[str, Any]], batch_size=100000
+    ) -> Iterable[tuple[int, str]]:
         """
         Upserts a batch of listings into the database
 
@@ -127,14 +129,14 @@ class Listing(Base):
         urls_with_embeddings = {row.url for row in session.execute(select(cls.url).where(cls.embeddings.isnot(None)))}
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
-        result_listing_id_to_url = {}
         urls_to_be_reset = set()
         with tqdm(desc="Processing godaddy data in batches:") as pbar:
             for i, url_item_batch in enumerate(batched(listings, batch_size)):
                 listing_id_to_url, urls_not_in_batch = cls.process_items(
                     session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5
                 )
-                result_listing_id_to_url.update(listing_id_to_url)
+                for listing_id, url in listing_id_to_url.items():
+                    yield listing_id, url
                 if i == 0:
                     urls_to_be_reset = urls_not_in_batch
                 else:
@@ -148,8 +150,6 @@ class Listing(Base):
                     [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
                 )
                 pbar.update(len(url_batch))
-
-        return result_listing_id_to_url
 
     @classmethod
     def process_items(
@@ -467,15 +467,14 @@ class OpenAIEmbeddingBatchRequest(Base):
     def create_batch_requests(
         cls,
         session: Session,
-        listing_id_to_url: dict[int, str],
+        listing_id_to_url: Iterable[tuple[int, str]],
         batch_size: int = 50000,
     ):
         """
         Create a batch request for the given listings
         """
-        total = len(listing_id_to_url)
-        with tqdm(total=total, desc="Creating batch requests") as pbar:
-            for listing_batch in batched(listing_id_to_url.items(), batch_size):
+        with tqdm(desc="Creating batch requests") as pbar:
+            for listing_batch in batched(listing_id_to_url, batch_size):
                 buffer = io.BytesIO()
                 for listing_id, url in listing_batch:
                     domain, tld = url.split(".")
@@ -530,11 +529,11 @@ class OpenAIEmbeddingBatchRequest(Base):
             elif batch_response.status == "failed":
                 created_at = dt.datetime.fromtimestamp(batch_response.created_at, tz=dt.UTC)
                 logger.error(f"Batch {batch_request.batch_id} failed!")
-                batch_request.status = BatchRequestStatus.FAILED
                 if now - created_at < dt.timedelta(days=2):
                     logger.warning(f"Batch {batch_request.batch_id} failed within last 48 hours, retrying")
-                    listing_id_to_url = {listing.id: listing.url for listing in batch_request.listings}
+                    listing_id_to_url = ((listing.id, listing.url) for listing in batch_request.listings)
                     cls.create_batch_requests(session, listing_id_to_url)
+                batch_request.status = BatchRequestStatus.FAILED
         return result
 
     def download(self, session: Session, retry=1, max_retries=3, batch_size=5000):
