@@ -528,7 +528,7 @@ class OpenAIEmbeddingBatchRequest(Base):
                 batch_request.status = BatchRequestStatus.COMPLETED
                 result.append(batch_request)
             elif batch_response.status == "failed":
-                created_at = dt.datetime.fromtimestamp(batch_response.created_at)
+                created_at = dt.datetime.fromtimestamp(batch_response.created_at, tz=dt.UTC)
                 logger.error(f"Batch {batch_request.batch_id} failed!")
                 batch_request.status = BatchRequestStatus.FAILED
                 if now - created_at < dt.timedelta(days=2):
