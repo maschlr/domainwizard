@@ -1,5 +1,5 @@
-import io
 import json
+import tempfile
 import zipfile
 from typing import Any
 
@@ -14,13 +14,15 @@ def download_dataset() -> dict[str, Any]:
     # Sizes in bytes.
     total_size = int(response.headers.get("content-length", 0))
     block_size = 1024
-    buffer = io.BytesIO()
-    with tqdm(total=total_size, unit="B", unit_scale=True, desc="Downloading Godaddy domain auctions") as progress_bar:
-        for chunk in response.iter_content(block_size):
-            progress_bar.update(len(chunk))
-            buffer.write(chunk)
+    with tempfile.TemporaryFile() as buffer:
+        with tqdm(
+            total=total_size, unit="B", unit_scale=True, desc="Downloading Godaddy domain auctions"
+        ) as progress_bar:
+            for chunk in response.iter_content(block_size):
+                progress_bar.update(len(chunk))
+                buffer.write(chunk)
 
-    with zipfile.ZipFile(buffer, "r") as myzip:
-        [json_file] = myzip.namelist()
-        with myzip.open(json_file) as myfile:
-            return json.loads(myfile.read())
+        with zipfile.ZipFile(buffer, "r") as myzip:
+            [json_file] = myzip.namelist()
+            with myzip.open(json_file) as myfile:
+                return json.loads(myfile.read())
