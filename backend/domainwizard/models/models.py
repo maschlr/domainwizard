@@ -326,7 +326,8 @@ class DomainSearch(Base):
         updated_listing_ids = listing_to_score.keys() - existing_listing_ids.keys()
         to_remove_listing_ids = existing_listing_ids.keys() - listing_to_score.keys()
 
-        for listing_id, score in updated_listing_ids:
+        for listing_id in updated_listing_ids:
+            score = listing_to_score[listing_id]
             listing_domain_search = ListingDomainSearch(listing_id=listing_id, domain_search=self, score=score)
             session.add(listing_domain_search)
 
