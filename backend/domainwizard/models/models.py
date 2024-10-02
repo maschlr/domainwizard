@@ -473,47 +473,45 @@ class OpenAIEmbeddingBatchRequest(Base):
         """
         Create a batch request for the given listings
         """
-        total = len(listing_id_to_url) // batch_size + 1
-        for listing_batch in tqdm(
-            batched(listing_id_to_url.items(), batch_size),
-            desc="Creating batch requests",
-            total=total,
-        ):
-            buffer = io.BytesIO()
-            for listing_id, url in listing_batch:
-                domain, tld = url.split(".")
-                request_data = {
-                    "custom_id": f"{str(ulid.ULID())}:{listing_id}:{url}",
-                    "method": "POST",
-                    "url": "/v1/embeddings",
-                    "body": {
-                        "model": "text-embedding-3-small",
-                        "input": [f"{domain} {tld}"],
-                        "encoding_format": "float",
-                    },
-                }
-                buffer.write((json.dumps(request_data) + "\n").encode("utf-8"))
-            buffer.seek(0)
+        total = len(listing_id_to_url)
+        with tqdm(total=total, desc="Creating batch requests") as pbar:
+            for listing_batch in batched(listing_id_to_url.items(), batch_size):
+                buffer = io.BytesIO()
+                for listing_id, url in listing_batch:
+                    domain, tld = url.split(".")
+                    request_data = {
+                        "custom_id": f"{str(ulid.ULID())}:{listing_id}:{url}",
+                        "method": "POST",
+                        "url": "/v1/embeddings",
+                        "body": {
+                            "model": "text-embedding-3-small",
+                            "input": [f"{domain} {tld}"],
+                            "encoding_format": "float",
+                        },
+                    }
+                    buffer.write((json.dumps(request_data) + "\n").encode("utf-8"))
+                buffer.seek(0)
 
-            batch_input_file = client.files.create(file=buffer, purpose="batch")
-            request_response = client.batches.create(
-                input_file_id=batch_input_file.id,
-                endpoint="/v1/embeddings",
-                completion_window="24h",
-            )
-            batch_request = cls(
-                batch_id=request_response.id,
-                status=BatchRequestStatus.PROCESSING,
-            )
-            session.add(batch_request)
-            session.flush()
-            session.execute(
-                update(Listing),
-                [{"id": listing_id, "batch_request_id": batch_request.id} for listing_id, _ in listing_batch],
-            )
+                batch_input_file = client.files.create(file=buffer, purpose="batch")
+                request_response = client.batches.create(
+                    input_file_id=batch_input_file.id,
+                    endpoint="/v1/embeddings",
+                    completion_window="24h",
+                )
+                batch_request = cls(
+                    batch_id=request_response.id,
+                    status=BatchRequestStatus.PROCESSING,
+                )
+                session.add(batch_request)
+                session.flush()
+                session.execute(
+                    update(Listing),
+                    [{"id": listing_id, "batch_request_id": batch_request.id} for listing_id, _ in listing_batch],
+                )
+                pbar.update(len(listing_batch))
 
     @classmethod
-    def update_processing(cls, session: Session):
+    def update_processing(cls, session: Session) -> list["OpenAIEmbeddingBatchRequest"]:
         """
         Process all the open batch requests
         """
@@ -521,6 +519,7 @@ class OpenAIEmbeddingBatchRequest(Base):
         open_batch_requests = session.scalars(
             select(cls).where(cls.status.in_([BatchRequestStatus.PENDING, BatchRequestStatus.PROCESSING]))
         )
+        now = dt.datetime.now(dt.UTC)
         for batch_request in open_batch_requests:
             batch_response = client.batches.retrieve(batch_request.batch_id)
             if batch_response.status == "completed":
@@ -528,6 +527,14 @@ class OpenAIEmbeddingBatchRequest(Base):
                 batch_request.output_file_id = batch_response.output_file_id
                 batch_request.status = BatchRequestStatus.COMPLETED
                 result.append(batch_request)
+            elif batch_response.status == "failed":
+                created_at = dt.datetime.fromtimestamp(batch_response.created_at)
+                logger.error(f"Batch {batch_request.batch_id} failed!")
+                batch_request.status = BatchRequestStatus.FAILED
+                if now - created_at < dt.timedelta(days=2):
+                    logger.warning(f"Batch {batch_request.batch_id} failed within last 48 hours, retrying")
+                    listing_id_to_url = {listing.id: listing.url for listing in batch_request.listings}
+                    cls.create_batch_requests(session, listing_id_to_url)
         return result
 
     def download(self, session: Session, retry=1, max_retries=3, batch_size=5000):
