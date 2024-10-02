@@ -124,33 +124,51 @@ class Listing(Base):
         logger.info("Upserting listings from downloaded batch")
         logger.info("Querying database for existing listings")
         url_to_id = {row.url: row.id for row in session.execute(select(cls.url, cls.id))}
+        urls_with_embeddings = {row.url for row in session.execute(select(cls.url).where(cls.embeddings.isnot(None)))}
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
         result_listing_id_to_url = {}
+        urls_to_be_reset = set()
         with tqdm(desc="Processing godaddy data in batches:") as pbar:
-            for url_item_batch in batched(listings, batch_size):
-                result_listing_id_to_url.update(
-                    cls.process_items(session, url_to_id, url_item_batch, batch_size=batch_size // 5)
+            for i, url_item_batch in enumerate(batched(listings, batch_size)):
+                listing_id_to_url, urls_not_in_batch = cls.process_items(
+                    session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5
                 )
+                result_listing_id_to_url.update(listing_id_to_url)
+                if i == 0:
+                    urls_to_be_reset = urls_not_in_batch
+                else:
+                    urls_to_be_reset &= urls_not_in_batch
                 pbar.update(len(url_item_batch))
+
+        with tqdm(total=len(urls_to_be_reset), desc="Resetting embeddings for outdated listings:") as pbar:
+            for url_batch in batched(urls_to_be_reset, batch_size // 5):
+                session.execute(
+                    update(cls),
+                    [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
+                )
+                pbar.update(len(url_batch))
 
         return result_listing_id_to_url
 
     @classmethod
     def process_items(
-        cls, session: Session, db_url_to_id: dict[str, int], url_items: Iterable[dict], batch_size: int
-    ) -> dict[int, str]:
+        cls,
+        session: Session,
+        db_url_to_id: dict[str, int],
+        urls_with_embeddings: set[str],
+        url_items: Iterable[dict],
+        batch_size: int,
+    ) -> tuple[dict[int, str], set[str]]:
         url_items = (cls.get_field_to_data(godaddy_datum) for godaddy_datum in url_items)
         url_to_data = {
             datum["url"]: datum for datum in url_items if not CONTAINS_MORE_THAN_TWO_NUMBERS_PATTERN.match(datum["url"])
         }
-        listing_urls_in_dataset = url_to_data.keys()
+        listing_urls_in_batch = url_to_data.keys()
 
-        listing_urls_to_be_updated = listing_urls_in_dataset & db_url_to_id.keys()
-        new_listing_urls = listing_urls_in_dataset - db_url_to_id.keys()
-        outdated_listing_urls = (db_url_to_id.keys() - listing_urls_in_dataset) & {
-            row.url for row in session.execute(select(cls.url).where(cls.embeddings.isnot(None)))
-        }
+        listing_urls_to_be_updated = listing_urls_in_batch & db_url_to_id.keys()
+        new_listing_urls = listing_urls_in_batch - db_url_to_id.keys()
+        urls_not_in_batch = (db_url_to_id.keys() - listing_urls_in_batch) & urls_with_embeddings
 
         fnames_for_update = [
             "auction_end_time",
@@ -187,19 +205,9 @@ class Listing(Base):
             logger.info("Retrieving listings without embeddings that are not outdated")
             query = select(cls.url).where(cls.batch_request_id.is_not(None))
             previously_batched_urls = {url for url, in session.execute(query)}
-            result_listing_id_to_url = {
-                db_url_to_id[url]: url for url in previously_batched_urls - outdated_listing_urls
-            }
+            result_listing_id_to_url = {db_url_to_id[url]: url for url in previously_batched_urls - urls_not_in_batch}
 
-        with tqdm(total=len(outdated_listing_urls), desc="Resetting embeddings for outdated listings:") as pbar:
-            for url_batch in batched(outdated_listing_urls, batch_size):
-                session.execute(
-                    update(cls),
-                    [{"id": db_url_to_id[url], "embeddings": None} for url in url_batch],
-                )
-                pbar.update(len(url_batch))
-
-        return result_listing_id_to_url
+        return result_listing_id_to_url, urls_not_in_batch
 
     @staticmethod
     def get_field_to_data(domaindatum):
