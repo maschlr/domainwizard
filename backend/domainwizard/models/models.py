@@ -38,7 +38,14 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    relationship,
+    sessionmaker,
+)
 from tqdm import tqdm
 from ulid import ULID
 from urllib3.exceptions import IncompleteRead
@@ -535,16 +542,19 @@ class OpenAIEmbeddingBatchRequest(Base):
                 batch_request.status = BatchRequestStatus.FAILED
         return result
 
-    def download(self, session: Session, retry=1, max_retries=3, batch_size=10000):
+    def download(self, session_factory: sessionmaker, retry=1, max_retries=3, batch_size=10000):
         download_url = self.output_file_id_download_url
         embedding_file_response = requests.get(download_url, stream=True, timeout=5)
+        with session_factory.begin() as session:
+            count_query = select(func.count()).select_from(Listing).where(Listing.batch_request_id == self.id)
+            n_listings = session.execute(count_query).scalar()
         try:
-            for data_batch in batched(self._yield_embedding_data(session, embedding_file_response), batch_size):
-                session.execute(
-                    update(Listing),
-                    [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
-                )
-                session.flush()
+            for data_batch in batched(self._yield_embedding_data(embedding_file_response, n_listings), batch_size):
+                with session_factory.begin() as session:
+                    session.execute(
+                        update(Listing),
+                        [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
+                    )
 
         except (IncompleteRead, ConnectionTimeoutError):
             if retry < max_retries:
@@ -559,10 +569,8 @@ class OpenAIEmbeddingBatchRequest(Base):
             )
             client.files.delete(self.output_file_id)
 
-    def _yield_embedding_data(self, session: Session, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
-        count_query = select(func.count()).select_from(Listing).where(Listing.batch_request_id == self.id)
-        total = session.execute(count_query).scalar()
-        with tqdm(total=total, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
+    def _yield_embedding_data(self, response: requests.Response, n_listings: int) -> Iterable[tuple[int, list[float]]]:
+        with tqdm(total=n_listings, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
             for line in response.iter_lines(decode_unicode=True):
                 data = json.loads(line)
                 custom_id = data["custom_id"]
