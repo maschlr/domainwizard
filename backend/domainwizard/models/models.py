@@ -1,7 +1,6 @@
 import datetime as dt
 import enum
 import hashlib
-import io
 import json
 import re
 import tempfile
@@ -539,45 +538,30 @@ class OpenAIEmbeddingBatchRequest(Base):
     def download(self, session: Session, retry=1, max_retries=3, batch_size=5000):
         download_url = self.output_file_id_download_url
         embedding_file_response = requests.get(download_url, stream=True, timeout=5)
-        # Sizes in bytes.
-        total_size = int(embedding_file_response.headers.get("content-length", 0))
-        block_size = 1024
-        with tempfile.TemporaryFile() as buffer:
-            try:
-                with tqdm(
-                    total=total_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=f"Downloading {self.batch_id}",
-                ) as progress_bar:
-                    for data in embedding_file_response.iter_content(block_size):
-                        progress_bar.update(len(data))
-                        buffer.write(data)
-            except (IncompleteRead, ConnectionTimeoutError):
-                if retry < max_retries:
-                    return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
-                else:
-                    raise
-
-            for buffer_batch in batched(self._yield_embedding_data(buffer), batch_size):
+        try:
+            for data_batch in batched(self._yield_embedding_data(embedding_file_response), batch_size):
                 session.execute(
                     update(Listing),
-                    [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in buffer_batch],
+                    [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
                 )
 
-            self.status = BatchRequestStatus.FINALIZED
-            if self.output_file_id:
-                logger.info(
-                    f"Downloaded embeddings for {len(self.listings)} listings in {self.batch_id}. Deleting file {self.output_file_id}"
-                )
-                client.files.delete(self.output_file_id)
+        except (IncompleteRead, ConnectionTimeoutError):
+            if retry < max_retries:
+                return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
+            else:
+                raise
 
-    def _yield_embedding_data(self, buffer: io.BufferedRandom) -> Iterable[tuple[int, list[float]]]:
+        self.status = BatchRequestStatus.FINALIZED
+        if self.output_file_id:
+            logger.info(
+                f"Downloaded embeddings for {len(self.listings)} listings in {self.batch_id}. Deleting file {self.output_file_id}"
+            )
+            client.files.delete(self.output_file_id)
+
+    def _yield_embedding_data(self, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
         total = len(self.listings)
-        with tqdm(total=total, desc=f"Processed lines in {self.batch_id}") as progress_bar:
-            buffer.seek(0)
-            text_buffer = io.TextIOWrapper(buffer, encoding="utf-8")
-            while line := text_buffer.readline():
+        with tqdm(total=total, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
+            for line in response.iter_lines(decode_unicode=True):
                 data = json.loads(line)
                 custom_id = data["custom_id"]
                 _ulid, listing_id, _url = custom_id.split(":")
