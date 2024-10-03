@@ -578,7 +578,7 @@ class OpenAIEmbeddingBatchRequest(Base):
     def _yield_embedding_data(
         self, response: requests.Response, n_listings: int, batch_id: str
     ) -> Iterable[tuple[int, list[float]]]:
-        with tqdm(total=n_listings, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
+        with tqdm(total=n_listings, desc=f"Downloading & processing lines in {batch_id}") as progress_bar:
             for line in response.iter_lines(decode_unicode=True):
                 data = json.loads(line)
                 custom_id = data["custom_id"]
