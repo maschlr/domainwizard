@@ -21,7 +21,7 @@ if __name__ == "__main__":
     for batch_request in tqdm(completed_batch_requests, desc="Downloading completed batch requests"):
         with Session.begin() as session:
             session.add(batch_request)
-            batch_request.download(session)
+            batch_request.download(session, batch_size=1000)
             session.flush()
             unlocked_domain_searches = DomainSearch.get_unlocked(session)
             for domain_search in unlocked_domain_searches:
