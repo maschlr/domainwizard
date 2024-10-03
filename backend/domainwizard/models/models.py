@@ -568,12 +568,14 @@ class OpenAIEmbeddingBatchRequest(Base):
             else:
                 raise
 
-        self.status = BatchRequestStatus.FINALIZED
-        if self.output_file_id:
-            logger.info(
-                f"Downloaded embeddings for {len(self.listings)} listings in {self.batch_id}. Deleting file {self.output_file_id}"
-            )
-            client.files.delete(self.output_file_id)
+        with session_factory.begin() as session:
+            session.add(self)
+            self.status = BatchRequestStatus.FINALIZED
+            if self.output_file_id:
+                logger.info(
+                    f"Downloaded embeddings for {n_listings} listings in {self.batch_id}. Deleting file {self.output_file_id}"
+                )
+                client.files.delete(self.output_file_id)
 
     def _yield_embedding_data(
         self, response: requests.Response, n_listings: int, batch_id: str
