@@ -539,7 +539,7 @@ class OpenAIEmbeddingBatchRequest(Base):
         download_url = self.output_file_id_download_url
         embedding_file_response = requests.get(download_url, stream=True, timeout=5)
         try:
-            for data_batch in batched(self._yield_embedding_data(embedding_file_response), batch_size):
+            for data_batch in batched(self._yield_embedding_data(session, embedding_file_response), batch_size):
                 session.execute(
                     update(Listing),
                     [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
@@ -558,8 +558,9 @@ class OpenAIEmbeddingBatchRequest(Base):
             )
             client.files.delete(self.output_file_id)
 
-    def _yield_embedding_data(self, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
-        total = len(self.listings)
+    def _yield_embedding_data(self, session: Session, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
+        count_query = select(func.count()).select_from(Listing).where(Listing.batch_request_id == self.id)
+        total = session.execute(count_query).scalar()
         with tqdm(total=total, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
             for line in response.iter_lines(decode_unicode=True):
                 data = json.loads(line)
