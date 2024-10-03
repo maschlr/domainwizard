@@ -543,13 +543,18 @@ class OpenAIEmbeddingBatchRequest(Base):
         return result
 
     def download(self, session_factory: sessionmaker, retry=1, max_retries=3, batch_size=10000):
-        download_url = self.output_file_id_download_url
-        embedding_file_response = requests.get(download_url, stream=True, timeout=5)
+
         with session_factory.begin() as session:
+            download_url = self.output_file_id_download_url
+            embedding_file_response = requests.get(download_url, stream=True, timeout=5)
+            session.add(self)
             count_query = select(func.count()).select_from(Listing).where(Listing.batch_request_id == self.id)
             n_listings = session.execute(count_query).scalar()
+            batch_id = self.batch_id
         try:
-            for data_batch in batched(self._yield_embedding_data(embedding_file_response, n_listings), batch_size):
+            for data_batch in batched(
+                self._yield_embedding_data(embedding_file_response, n_listings, batch_id), batch_size
+            ):
                 with session_factory.begin() as session:
                     session.execute(
                         update(Listing),
@@ -569,7 +574,9 @@ class OpenAIEmbeddingBatchRequest(Base):
             )
             client.files.delete(self.output_file_id)
 
-    def _yield_embedding_data(self, response: requests.Response, n_listings: int) -> Iterable[tuple[int, list[float]]]:
+    def _yield_embedding_data(
+        self, response: requests.Response, n_listings: int, batch_id: str
+    ) -> Iterable[tuple[int, list[float]]]:
         with tqdm(total=n_listings, desc=f"Downloading & processing lines in {self.batch_id}") as progress_bar:
             for line in response.iter_lines(decode_unicode=True):
                 data = json.loads(line)
