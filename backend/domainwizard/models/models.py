@@ -549,6 +549,7 @@ class OpenAIEmbeddingBatchRequest(Base):
             download_url = self.output_file_id_download_url
             embedding_file_response = requests.get(download_url, stream=True, timeout=5)
             session.add(self)
+            # pylint: disable=not-callable
             count_query = select(func.count()).select_from(Listing).where(Listing.batch_request_id == self.id)
             n_listings = session.execute(count_query).scalar()
             batch_id = self.batch_id
