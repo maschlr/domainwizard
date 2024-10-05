@@ -37,11 +37,11 @@ export default function RootLayout({
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>
 				<header className="flex justify-center pt-8">
-					<p
-						style={fondamento.style}
-						className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-900 text-4xl font-bold "
-					>
-						<Link href="/" className="drop-shadow-md">
+					<p style={fondamento.style}>
+						<Link
+							href="/"
+							className="drop-shadow-md text-transparent bg-clip-text bg-gradient-to-r from-primary to-purple-900 text-4xl font-bold"
+						>
 							urlwiz.io
 						</Link>
 					</p>
