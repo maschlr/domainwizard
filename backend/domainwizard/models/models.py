@@ -27,7 +27,6 @@ import requests
 import ulid
 from loguru import logger
 from pgvector.sqlalchemy import Vector
-from requests.exceptions import ConnectionError
 from sqlalchemy import (
     ForeignKey,
     Index,
@@ -49,7 +48,7 @@ from sqlalchemy.orm import (
 )
 from tqdm import tqdm
 from ulid import ULID
-from urllib3.exceptions import IncompleteRead
+from urllib3.exceptions import IncompleteRead, ProtocolError
 from urllib3.exceptions import TimeoutError as ConnectionTimeoutError
 
 from ..config import config
@@ -567,7 +566,7 @@ class OpenAIEmbeddingBatchRequest(Base):
                         [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
                     )
 
-        except (IncompleteRead, ConnectionTimeoutError, ConnectionError):
+        except (IncompleteRead, ConnectionTimeoutError, requests.exceptions.ConnectionError, ProtocolError):
             if retry < max_retries:
                 logger.warning(f"Download failed for {batch_id}. Retrying {retry}/{max_retries}")
                 return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
