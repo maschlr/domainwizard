@@ -156,6 +156,7 @@ class Listing(Base):
                     update(cls),
                     [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
                 )
+                session.flush()
                 pbar.update(len(url_batch))
 
     @classmethod
@@ -196,6 +197,7 @@ class Listing(Base):
                         for url in url_batch
                     ],
                 )
+                session.flush()
                 pbar.update(len(url_batch))
 
         result_listing_id_to_url = {}
@@ -207,6 +209,7 @@ class Listing(Base):
                         [url_to_data[url] for url in url_batch],
                     )
                     result_listing_id_to_url.update({listing.id: listing.url for listing in new_listings})
+                    session.flush()
                     pbar.update(len(url_batch))
 
         return result_listing_id_to_url, urls_not_in_batch
