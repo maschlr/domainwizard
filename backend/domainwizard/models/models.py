@@ -569,7 +569,7 @@ class OpenAIEmbeddingBatchRequest(Base):
         except (IncompleteRead, ConnectionTimeoutError, requests.exceptions.ConnectionError, ProtocolError):
             if retry < max_retries:
                 logger.warning(f"Download failed for {batch_id}. Retrying {retry}/{max_retries}")
-                return self.download(session, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
+                return self.download(session_factory, retry=retry + 1, max_retries=max_retries, batch_size=batch_size)
             else:
                 raise
 
