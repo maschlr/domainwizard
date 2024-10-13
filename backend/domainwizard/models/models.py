@@ -187,7 +187,7 @@ class Listing(Base):
 
         result_listing_id_to_url = {}
         if new_listing_urls:
-            logger.info("Inserting new listings in batch #{n_batch}")
+            logger.info(f"Inserting new listings in batch #{n_batch}")
             for url_batch in batched(new_listing_urls, batch_size):
                 new_listings = session.execute(
                     insert(cls).returning(cls.id, cls.url),
