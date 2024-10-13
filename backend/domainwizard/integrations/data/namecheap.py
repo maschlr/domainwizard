@@ -49,9 +49,13 @@ class NamecheapAdapter(DomainAdapter):
             "price": int(float(domaindatum["price"])),
             "number_of_bids": int(domaindatum["bidCount"]),
             "domain_age": (
-                dt.datetime.fromisoformat(domaindatum["registeredDate"]).replace(tzinfo=dt.UTC)
-                - dt.datetime.now(dt.UTC)
-            ).days
-            // 365,
+                (
+                    dt.datetime.fromisoformat(domaindatum["registeredDate"]).replace(tzinfo=dt.UTC)
+                    - dt.datetime.now(dt.UTC)
+                ).days
+                // 365
+                if domaindatum.get("registeredDate")
+                else None
+            ),
             "valuation": int(float(domaindatum.get("lastSoldPrice") or domaindatum.get("estibotValue") or 0)),
         }
