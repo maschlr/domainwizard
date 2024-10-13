@@ -2,7 +2,6 @@ import datetime as dt
 import enum
 import hashlib
 import json
-import re
 import tempfile
 import time
 
@@ -20,7 +19,7 @@ except ImportError:
             yield batch
 
 
-from typing import Any, Iterable, Iterator, List, Optional, Self, Sequence, Tuple
+from typing import Iterable, Iterator, List, Optional, Self, Sequence, Tuple
 
 import openai
 import requests
@@ -46,7 +45,6 @@ from sqlalchemy.orm import (
     relationship,
     sessionmaker,
 )
-from tqdm import tqdm
 from ulid import ULID
 from urllib3.exceptions import IncompleteRead, ProtocolError
 from urllib3.exceptions import TimeoutError as ConnectionTimeoutError
@@ -54,9 +52,6 @@ from urllib3.exceptions import TimeoutError as ConnectionTimeoutError
 from ..config import config
 from ..integrations.completions import get_summary
 from ..integrations.embeddings import get_embeddings
-
-DOLLAR_PATTERN = re.compile(r"\$(\d+)")
-CONTAINS_MORE_THAN_TWO_NUMBERS_PATTERN = re.compile(r".*?\d{3,}.*?$")
 
 client = openai.OpenAI(api_key=config["OPENAI_API_KEY"])
 
@@ -118,9 +113,7 @@ class Listing(Base):
     )
 
     @classmethod
-    def upsert_batch(
-        cls, session: Session, listings: Iterator[dict[str, Any]], batch_size=100000
-    ) -> Iterable[tuple[int, str]]:
+    def upsert_batch(cls, session: Session, listings: Iterator[Self], batch_size=100000) -> Iterable[tuple[int, str]]:
         """
         Upserts a batch of listings into the database
 
@@ -136,27 +129,25 @@ class Listing(Base):
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
         urls_to_be_reset = set()
-        with tqdm(desc="Processing godaddy data in batches:") as pbar:
-            for i, url_item_batch in enumerate(batched(listings, batch_size)):
-                listing_id_to_url, urls_not_in_batch = cls.process_items(
-                    session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5
-                )
-                for listing_id, url in listing_id_to_url.items():
-                    yield listing_id, url
-                if i == 0:
-                    urls_to_be_reset = urls_not_in_batch
-                else:
-                    urls_to_be_reset &= urls_not_in_batch
-                pbar.update(len(url_item_batch))
+        logger.info("Processing godaddy data in batches...")
+        for i, url_item_batch in enumerate(batched(listings, batch_size)):
+            listing_id_to_url, urls_not_in_batch = cls.process_items(
+                session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5, n_batch=i + 1
+            )
+            for listing_id, url in listing_id_to_url.items():
+                yield listing_id, url
+            if i == 0:
+                urls_to_be_reset = urls_not_in_batch
+            else:
+                urls_to_be_reset &= urls_not_in_batch
 
-        with tqdm(total=len(urls_to_be_reset), desc="Resetting embeddings for outdated listings:") as pbar:
-            for url_batch in batched(urls_to_be_reset, batch_size // 5):
-                session.execute(
-                    update(cls),
-                    [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
-                )
-                session.flush()
-                pbar.update(len(url_batch))
+        logger.info("Resetting embeddings for outdated listings...")
+        for url_batch in batched(urls_to_be_reset, batch_size // 5):
+            session.execute(
+                update(cls),
+                [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
+            )
+            session.flush()
 
     @classmethod
     def process_items(
@@ -166,13 +157,10 @@ class Listing(Base):
         urls_with_embeddings: set[str],
         url_items: Iterable[dict],
         batch_size: int,
+        n_batch: int,
     ) -> tuple[dict[int, str], set[str]]:
-        url_items = (cls.get_field_to_data(godaddy_datum) for godaddy_datum in url_items)
-        url_to_data = {
-            datum["url"]: datum for datum in url_items if not CONTAINS_MORE_THAN_TWO_NUMBERS_PATTERN.match(datum["url"])
-        }
+        url_to_data = {datum["url"]: datum for datum in url_items}
         listing_urls_in_batch = url_to_data.keys()
-
         listing_urls_to_be_updated = listing_urls_in_batch & db_url_to_id.keys()
         new_listing_urls = listing_urls_in_batch - db_url_to_id.keys()
         urls_not_in_batch = (db_url_to_id.keys() - listing_urls_in_batch) & urls_with_embeddings
@@ -183,68 +171,32 @@ class Listing(Base):
             "valuation",
             "number_of_bids",
         ]
-        n_updates = len(listing_urls_to_be_updated)
-        with tqdm(total=n_updates, desc="Updating existing listings:") as pbar:
-            for url_batch in batched(listing_urls_to_be_updated, batch_size):
-                session.execute(
-                    update(cls),
-                    [
-                        {
-                            "id": db_url_to_id[url],
-                            **{fname: url_to_data[url].get(fname) for fname in fnames_for_update},
-                        }
-                        for url in url_batch
-                    ],
-                )
-                session.flush()
-                pbar.update(len(url_batch))
+        logger.info(f"Updating existing listings in batch #{n_batch}")
+        for url_batch in batched(listing_urls_to_be_updated, batch_size):
+            session.execute(
+                update(cls),
+                [
+                    {
+                        "id": db_url_to_id[url],
+                        **{fname: url_to_data[url].get(fname) for fname in fnames_for_update},
+                    }
+                    for url in url_batch
+                ],
+            )
+            session.flush()
 
         result_listing_id_to_url = {}
         if new_listing_urls:
-            with tqdm(total=len(new_listing_urls), desc="Inserting new listings:") as pbar:
-                for url_batch in batched(new_listing_urls, batch_size):
-                    new_listings = session.execute(
-                        insert(cls).returning(cls.id, cls.url),
-                        [url_to_data[url] for url in url_batch],
-                    )
-                    result_listing_id_to_url.update({listing.id: listing.url for listing in new_listings})
-                    session.flush()
-                    pbar.update(len(url_batch))
+            logger.info("Inserting new listings in batch #{n_batch}")
+            for url_batch in batched(new_listing_urls, batch_size):
+                new_listings = session.execute(
+                    insert(cls).returning(cls.id, cls.url),
+                    [url_to_data[url] for url in url_batch],
+                )
+                result_listing_id_to_url.update({listing.id: listing.url for listing in new_listings})
+                session.flush()
 
         return result_listing_id_to_url, urls_not_in_batch
-
-    @staticmethod
-    def get_field_to_data(domaindatum):
-        keys_to_transform = {
-            "domainName": ("url", lambda x: x.lower()),
-            "auctionEndTime": (
-                "auction_end_time",
-                lambda dt_str: dt.datetime.fromisoformat(dt_str).replace(tzinfo=dt.UTC),
-            ),
-            "price": ("price", lambda x: match.group(1) if (match := DOLLAR_PATTERN.match(x)) else None),
-            "valuation": ("valuation", lambda x: match.group(1) if (match := DOLLAR_PATTERN.match(x)) else None),
-            "monthlyParkingRevenue": (
-                "monthly_parking_revenue",
-                lambda x: match.group(1) if (match := DOLLAR_PATTERN.match(x)) else None,
-            ),
-        }
-        keys_to_fname = {
-            "link": "link",
-            "auctionType": "auction_type",
-            "numberOfBids": "number_of_bids",
-            "domainAge": "domain_age",
-            "pageviews": "pageviews",
-            "isAdult": "is_adult",
-        }
-        fields_to_data = {}
-        for key, value in domaindatum.items():
-            if key in keys_to_transform:
-                model_fname, fnc = keys_to_transform[key]
-                fields_to_data[model_fname] = fnc(value)
-            else:
-                fname = keys_to_fname[key]
-                fields_to_data[fname] = value
-        return fields_to_data
 
     @classmethod
     def get_by_embeddings(
@@ -423,8 +375,8 @@ class DomainSearch(Base):
         return result
 
     @classmethod
-    def get_unlocked(cls, session: Session) -> Sequence["DomainSearch"]:
-        return session.scalars(select(cls).where(cls.is_unlocked)).all()
+    def get_all(cls, session: Session) -> Sequence["DomainSearch"]:
+        return session.scalars(select(cls)).all()
 
 
 class ListingDomainSearch(Base):
@@ -477,41 +429,40 @@ class OpenAIEmbeddingBatchRequest(Base):
         """
         Create a batch request for the given listings
         """
-        with tqdm(desc="Creating batch requests") as pbar:
-            for listing_batch in batched(listing_id_to_url, batch_size):
-                with tempfile.TemporaryFile() as buffer:
-                    for listing_id, url in listing_batch:
-                        domain, tld = url.split(".")
-                        request_data = {
-                            "custom_id": f"{str(ulid.ULID())}:{listing_id}:{url}",
-                            "method": "POST",
-                            "url": "/v1/embeddings",
-                            "body": {
-                                "model": "text-embedding-3-small",
-                                "input": [f"{domain} {tld}"],
-                                "encoding_format": "float",
-                            },
-                        }
-                        buffer.write((json.dumps(request_data) + "\n").encode("utf-8"))
-                    buffer.seek(0)
+        logger.info("Creating batch requests")
+        for listing_batch in batched(listing_id_to_url, batch_size):
+            with tempfile.TemporaryFile() as buffer:
+                for listing_id, url in listing_batch:
+                    domain, tld = url.split(".")
+                    request_data = {
+                        "custom_id": f"{str(ulid.ULID())}:{listing_id}:{url}",
+                        "method": "POST",
+                        "url": "/v1/embeddings",
+                        "body": {
+                            "model": "text-embedding-3-small",
+                            "input": [f"{domain} {tld}"],
+                            "encoding_format": "float",
+                        },
+                    }
+                    buffer.write((json.dumps(request_data) + "\n").encode("utf-8"))
+                buffer.seek(0)
 
-                    batch_input_file = client.files.create(file=buffer, purpose="batch")
-                    request_response = client.batches.create(
-                        input_file_id=batch_input_file.id,
-                        endpoint="/v1/embeddings",
-                        completion_window="24h",
-                    )
-                    batch_request = cls(
-                        batch_id=request_response.id,
-                        status=BatchRequestStatus.PROCESSING,
-                    )
-                    session.add(batch_request)
-                    session.flush()
-                    session.execute(
-                        update(Listing),
-                        [{"id": listing_id, "batch_request_id": batch_request.id} for listing_id, _ in listing_batch],
-                    )
-                    pbar.update(len(listing_batch))
+                batch_input_file = client.files.create(file=buffer, purpose="batch")
+                request_response = client.batches.create(
+                    input_file_id=batch_input_file.id,
+                    endpoint="/v1/embeddings",
+                    completion_window="24h",
+                )
+                batch_request = cls(
+                    batch_id=request_response.id,
+                    status=BatchRequestStatus.PROCESSING,
+                )
+                session.add(batch_request)
+                session.flush()
+                session.execute(
+                    update(Listing),
+                    [{"id": listing_id, "batch_request_id": batch_request.id} for listing_id, _ in listing_batch],
+                )
 
     @classmethod
     def update_processing(cls, session: Session) -> list["OpenAIEmbeddingBatchRequest"]:
@@ -546,7 +497,6 @@ class OpenAIEmbeddingBatchRequest(Base):
         return result
 
     def download(self, session_factory: sessionmaker, retry=1, max_retries=3, batch_size=10000):
-
         with session_factory.begin() as session:
             session.add(self)
             download_url = self.output_file_id_download_url
@@ -557,9 +507,7 @@ class OpenAIEmbeddingBatchRequest(Base):
             n_listings = session.execute(count_query).scalar()
             batch_id = self.batch_id
         try:
-            for data_batch in batched(
-                self._yield_embedding_data(embedding_file_response, n_listings, batch_id), batch_size
-            ):
+            for data_batch in batched(self._yield_embedding_data(embedding_file_response), batch_size):
                 with session_factory.begin() as session:
                     session.execute(
                         update(Listing),
@@ -582,14 +530,11 @@ class OpenAIEmbeddingBatchRequest(Base):
                 )
                 client.files.delete(self.output_file_id)
 
-    def _yield_embedding_data(
-        self, response: requests.Response, n_listings: int, batch_id: str
-    ) -> Iterable[tuple[int, list[float]]]:
-        with tqdm(total=n_listings, desc=f"Downloading & processing lines in {batch_id}") as progress_bar:
-            for line in response.iter_lines(decode_unicode=True):
-                data = json.loads(line)
-                custom_id = data["custom_id"]
-                _ulid, listing_id, _url = custom_id.split(":")
-                embeddings = data["response"]["body"]["data"][0]["embedding"]
-                yield listing_id, embeddings
-                progress_bar.update(1)
+    def _yield_embedding_data(self, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
+        logger.info("Downloading & processing lines in {batch_id}")
+        for line in response.iter_lines(decode_unicode=True):
+            data = json.loads(line)
+            custom_id = data["custom_id"]
+            _ulid, listing_id, _url = custom_id.split(":")
+            embeddings = data["response"]["body"]["data"][0]["embedding"]
+            yield listing_id, embeddings
