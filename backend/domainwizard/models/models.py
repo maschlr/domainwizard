@@ -433,14 +433,14 @@ class OpenAIEmbeddingBatchRequest(Base):
         for listing_batch in batched(listing_id_to_url, batch_size):
             with tempfile.TemporaryFile() as buffer:
                 for listing_id, url in listing_batch:
-                    domain, tld = url.split(".")
+                    parts = url.split(".")
                     request_data = {
                         "custom_id": f"{str(ulid.ULID())}:{listing_id}:{url}",
                         "method": "POST",
                         "url": "/v1/embeddings",
                         "body": {
                             "model": "text-embedding-3-small",
-                            "input": [f"{domain} {tld}"],
+                            "input": [" ".join(parts)],
                             "encoding_format": "float",
                         },
                     }
