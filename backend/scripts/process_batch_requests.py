@@ -5,8 +5,8 @@ from domainwizard.models import (
     OpenAIEmbeddingBatchRequest,
     Session,
 )
+from loguru import logger
 from sqlalchemy import select
-from tqdm import tqdm
 
 if __name__ == "__main__":
     with Session.begin() as session:
@@ -18,10 +18,21 @@ if __name__ == "__main__":
                 )
             ).all()
 
-    for batch_request in tqdm(completed_batch_requests, desc="Downloading completed batch requests"):
+    updated = False
+    logger.info("Downloading completed batch requests")
+    for batch_request in completed_batch_requests:
         batch_request.download(Session, batch_size=5000)
-        unlocked_domain_searches = DomainSearch.get_unlocked(session)
-        for domain_search in unlocked_domain_searches:
-            updated_listings = domain_search.update_listings(session)
-            if updated_listings and domain_search.email and domain_search.name:
-                send_update_email(domain_search, updated_listings)
+        updated = True
+
+    if updated:
+        with Session.begin() as session:
+            domain_searches = DomainSearch.get_all(session)
+            for domain_search in domain_searches:
+                updated_listings = domain_search.update_listings(session)
+                if (
+                    updated_listings is not None
+                    and domain_search.is_unlocked
+                    and domain_search.email
+                    and domain_search.name
+                ):
+                    send_update_email(domain_search, updated_listings)
