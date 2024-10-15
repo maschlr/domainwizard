@@ -15,7 +15,7 @@ DOLLAR_PATTERN = re.compile(r"\$(\d+)")
 
 class GodaddyAdapter(DomainAdapter):
     url = "https://inventory.auctions.godaddy.com/all_listings.json.zip"
-    name = "GoDaddy"
+    name = "godaddy"
 
     def yield_listings_data(self) -> Iterator[dict[str, Any]]:
         response = requests.get(self.url, stream=True, timeout=10)
