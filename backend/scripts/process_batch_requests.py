@@ -21,7 +21,7 @@ if __name__ == "__main__":
     updated = False
     logger.info("Downloading completed batch requests")
     for batch_request in completed_batch_requests:
-        batch_request.download(Session, batch_size=5000)
+        batch_request.download(Session, batch_size=1000)
         updated = True
 
     if updated:
