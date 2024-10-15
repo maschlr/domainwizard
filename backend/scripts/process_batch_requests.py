@@ -28,6 +28,7 @@ if __name__ == "__main__":
         with Session.begin() as session:
             domain_searches = DomainSearch.get_all(session)
             for domain_search in domain_searches:
+                logger.info(f"Updating domain search '{domain_search.summary}' ({domain_search.uuid})")
                 updated_listings = domain_search.update_listings(session)
                 if (
                     updated_listings is not None
