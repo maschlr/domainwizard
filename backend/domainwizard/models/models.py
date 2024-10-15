@@ -32,6 +32,7 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     Result,
+    delete,
     func,
     insert,
     select,
@@ -113,7 +114,9 @@ class Listing(Base):
     )
 
     @classmethod
-    def upsert_batch(cls, session: Session, listings: Iterator[Self], batch_size=100000) -> Iterable[tuple[int, str]]:
+    def upsert_batch(
+        cls, session: Session, listings: Iterator[Self], source: str, batch_size=100000
+    ) -> Iterable[tuple[int, str]]:
         """
         Upserts a batch of listings into the database
 
@@ -123,13 +126,20 @@ class Listing(Base):
         """
         tick = time.time()
         logger.info("Upserting listings from downloaded batch")
-        logger.info("Querying database for existing listings")
-        url_to_id = {row.url: row.id for row in session.execute(select(cls.url, cls.id))}
-        urls_with_embeddings = {row.url for row in session.execute(select(cls.url).where(cls.embeddings.isnot(None)))}
+        logger.info(f"Querying database for existing listings from {source}")
+        url_to_id = {
+            row.url: row.id for row in session.execute(select(cls.url, cls.id).where(cls.link.like(f"%{source}%")))
+        }
+        urls_with_embeddings = {
+            row.url
+            for row in session.execute(
+                select(cls.url).where(cls.embeddings.isnot(None)).where(cls.link.like(f"%{source}%"))
+            )
+        }
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
-        urls_to_be_reset = set()
-        logger.info("Processing godaddy data in batches...")
+        urls_to_be_deleted = set()
+        logger.info(f"Processing {source} data in batches...")
         for i, url_item_batch in enumerate(batched(listings, batch_size)):
             listing_id_to_url, urls_not_in_batch = cls.process_items(
                 session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5, n_batch=i + 1
@@ -137,16 +147,13 @@ class Listing(Base):
             for listing_id, url in listing_id_to_url.items():
                 yield listing_id, url
             if i == 0:
-                urls_to_be_reset = urls_not_in_batch
+                urls_to_be_deleted = urls_not_in_batch
             else:
-                urls_to_be_reset &= urls_not_in_batch
+                urls_to_be_deleted &= urls_not_in_batch
 
-        logger.info("Resetting embeddings for outdated listings...")
-        for url_batch in batched(urls_to_be_reset, batch_size // 5):
-            session.execute(
-                update(cls),
-                [{"id": url_to_id[url], "embeddings": None} for url in url_batch],
-            )
+        logger.info("Deleting outdated listings...")
+        for url_batch in batched(urls_to_be_deleted, batch_size // 5):
+            session.execute(delete(cls).where(cls.id.in_(url_to_id[url] for url in url_batch)))
             session.flush()
 
     @classmethod
@@ -429,8 +436,8 @@ class OpenAIEmbeddingBatchRequest(Base):
         """
         Create a batch request for the given listings
         """
-        logger.info("Creating batch requests")
-        for listing_batch in batched(listing_id_to_url, batch_size):
+        for i, listing_batch in enumerate(batched(listing_id_to_url, batch_size)):
+            logger.info(f"Creating OpenAI text embedding batch request #{i+1}")
             with tempfile.TemporaryFile() as buffer:
                 for listing_id, url in listing_batch:
                     parts = url.split(".")
@@ -507,7 +514,7 @@ class OpenAIEmbeddingBatchRequest(Base):
             n_listings = session.execute(count_query).scalar()
             batch_id = self.batch_id
         try:
-            for data_batch in batched(self._yield_embedding_data(embedding_file_response), batch_size):
+            for data_batch in batched(self._yield_embedding_data(embedding_file_response, batch_id), batch_size):
                 with session_factory.begin() as session:
                     session.execute(
                         update(Listing),
@@ -530,8 +537,9 @@ class OpenAIEmbeddingBatchRequest(Base):
                 )
                 client.files.delete(self.output_file_id)
 
-    def _yield_embedding_data(self, response: requests.Response) -> Iterable[tuple[int, list[float]]]:
-        logger.info("Downloading & processing lines in {batch_id}")
+    @staticmethod
+    def _yield_embedding_data(response: requests.Response, batch_id: str) -> Iterable[tuple[int, list[float]]]:
+        logger.info(f"Downloading & processing lines in {batch_id}")
         for line in response.iter_lines(decode_unicode=True):
             data = json.loads(line)
             custom_id = data["custom_id"]
