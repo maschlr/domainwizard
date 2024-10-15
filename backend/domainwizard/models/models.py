@@ -389,7 +389,7 @@ class DomainSearch(Base):
 class ListingDomainSearch(Base):
     __tablename__ = "listings_to_domain_searches_rel"
 
-    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"), primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id", ondelete="CASCADE"), primary_key=True)
     domain_search_id: Mapped[int] = mapped_column(ForeignKey("domain_searches.id"), primary_key=True)
     listing: Mapped["Listing"] = relationship(
         Listing, back_populates="listing_domain_searches", overlaps="domain_searches,listings"
