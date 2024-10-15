@@ -10,6 +10,8 @@ if __name__ == "__main__":
             f"Downloaded dataset from {adapter.name}. Starting database upsert...",
         )
         with Session.begin() as session:
-            new_listing_id_to_url = Listing.upsert_batch(session, dataset, adapter.name)
-            if new_listing_id_to_url:
-                OpenAIEmbeddingBatchRequest.create_batch_requests(session, new_listing_id_to_url)
+            new_listing_id_to_url = (
+                (listing_id, listing_url)
+                for listing_id, listing_url in Listing.upsert_batch(session, dataset, adapter.name)
+            )
+            OpenAIEmbeddingBatchRequest.create_batch_requests(session, new_listing_id_to_url)

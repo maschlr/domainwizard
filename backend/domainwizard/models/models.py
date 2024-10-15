@@ -436,8 +436,8 @@ class OpenAIEmbeddingBatchRequest(Base):
         """
         Create a batch request for the given listings
         """
-        logger.info("Creating batch requests")
-        for listing_batch in batched(listing_id_to_url, batch_size):
+        for i, listing_batch in enumerate(batched(listing_id_to_url, batch_size)):
+            logger.info(f"Creating OpenAI text embedding batch request #{i+1}")
             with tempfile.TemporaryFile() as buffer:
                 for listing_id, url in listing_batch:
                     parts = url.split(".")
