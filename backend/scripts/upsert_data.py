@@ -7,6 +7,7 @@ from domainwizard.models import (
     Session,
 )
 from loguru import logger
+from sqlalchemy import text
 
 if __name__ == "__main__":
     for Adapter in Adapters:
@@ -28,5 +29,8 @@ if __name__ == "__main__":
         domain_search_count = DomainSearch.get_count(session)
         data_update = DataUpdate(listing_count=listing_count, domain_search_count=domain_search_count)
         session.add(data_update)
+
+    with Session.begin() as session:
+        session.execute(text("VACUUM"))
 
     logger.info("Upserting data finished.")
