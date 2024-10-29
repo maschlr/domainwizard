@@ -35,7 +35,7 @@ def upgrade() -> None:
                 VALUES (
                     NOW(),
                     NOW(),
-                    (SELECT COUNT(*) FROM listings WHERE auction_end_time < NOW()),
+                    (SELECT COUNT(*) FROM listings WHERE auction_end_time > NOW()),
                     (SELECT COUNT(*) FROM domain_searches)
                 );
                """
