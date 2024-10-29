@@ -385,6 +385,14 @@ class DomainSearch(Base):
     def get_all(cls, session: Session) -> Sequence["DomainSearch"]:
         return session.scalars(select(cls)).all()
 
+    @classmethod
+    def get_count(cls, session: Session) -> int:
+        count = session.scalar(select(func.count()).select_from(cls))
+        if count is None:
+            return 0
+        else:
+            return count
+
 
 class ListingDomainSearch(Base):
     __tablename__ = "listings_to_domain_searches_rel"
