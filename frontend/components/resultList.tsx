@@ -48,13 +48,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { fetcher } from "@/lib/utils";
-import {
-	AlarmClockCheck,
-	CreditCard,
-	ExternalLink,
-	LockOpen,
-	Pencil,
-} from "lucide-react";
+import { CreditCard, ExternalLink, LockOpen, Pencil } from "lucide-react";
 import type { DomainSearchResult, Listing, Skeleton } from "../lib/models";
 
 function getTimeLeftStr(epoch: number) {
@@ -120,7 +114,7 @@ export default function ResultList({ data }: { data: DomainSearchResult }) {
 												size="lg"
 												className="bg-primary text-white text-left h-auto py-3 px-4 max-w-full space-x-3 transition-colors"
 											>
-												<AlarmClockCheck className="h-4 w-4 flex-shrink-0" />
+												<LockOpen className="h-4 w-4 flex-shrink-0" />
 												<span className="hidden md:block line-clamp-2">
 													Unlock
 												</span>
@@ -143,7 +137,7 @@ export default function ResultList({ data }: { data: DomainSearchResult }) {
 															for your search query
 														</li>
 														<li>
-															You request is{" "}
+															Your request is{" "}
 															<span className="font-semibold">
 																updated daily
 															</span>{" "}
@@ -162,7 +156,7 @@ export default function ResultList({ data }: { data: DomainSearchResult }) {
 															</span>
 														</li>
 														<li>
-															You receive a{" "}
+															You receive{" "}
 															<span className="font-semibold">
 																daily emails
 															</span>{" "}
