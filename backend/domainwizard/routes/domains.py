@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from ..models import DomainSearch, Listing, Session
+from ..models import DataUpdate, DomainSearch, Session
 
 router = APIRouter()
 
@@ -43,7 +43,7 @@ async def get_request(uuid: str):
 @router.get("/api/count")
 async def get_active_listings_count():
     with Session.begin() as session:
-        return Listing.get_active_listings_count(session)
+        return DataUpdate.get_listing_count(session)
 
 
 class DomainSearchRequestBody(BaseModel):

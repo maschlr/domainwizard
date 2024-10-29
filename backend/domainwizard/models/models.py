@@ -559,3 +559,8 @@ class DataUpdate(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     listing_count: Mapped[int] = mapped_column()
     domain_search_count: Mapped[int] = mapped_column()
+
+    @classmethod
+    def get_listing_count(cls, session: Session):
+        latest_update = session.scalar(select(cls).order_by(cls.created_at.desc()).limit(1))
+        return latest_update.listing_count
