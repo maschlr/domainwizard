@@ -552,3 +552,10 @@ class OpenAIEmbeddingBatchRequest(Base):
             _ulid, listing_id, _url = custom_id.split(":")
             embeddings = data["response"]["body"]["data"][0]["embedding"]
             yield listing_id, embeddings
+
+
+class DataUpdate(Base):
+    __tablename__ = "data_updates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_count: Mapped[int] = mapped_column()
+    domain_search_count: Mapped[int] = mapped_column()
