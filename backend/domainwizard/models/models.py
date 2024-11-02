@@ -23,6 +23,7 @@ from typing import Iterable, Iterator, List, Optional, Self, Sequence, Tuple
 
 import openai
 import requests
+import sqlalchemy
 import ulid
 from loguru import logger
 from pgvector.sqlalchemy import Vector
@@ -524,10 +525,14 @@ class OpenAIEmbeddingBatchRequest(Base):
         try:
             for data_batch in batched(self._yield_embedding_data(embedding_file_response, batch_id), batch_size):
                 with session_factory.begin() as session:
-                    session.execute(
-                        update(Listing),
-                        [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
-                    )
+                    try:
+                        session.execute(
+                            update(Listing),
+                            [{"id": listing_id, "embeddings": embeddings} for listing_id, embeddings in data_batch],
+                        )
+                    except sqlalchemy.orm.exc.StaleDataError as e:
+                        logger.warning(f"Skipping batch with {len(data_batch)} entries ({e})")
+                        continue
 
         except (
             TimeoutError,
