@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Get the directory of the script
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Change into the frontend directory
+cd $DIR/../frontend
+
+# Build
+npm run build
+
+# Run service
+npm run start

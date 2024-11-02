@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Get the directory of the script
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Change into the backend directory
+cd $DIR/../backend
+
+# Activate virtual environment
+source .venv/bin/activate &&
+
+# run fastAPI service
+python main.py
