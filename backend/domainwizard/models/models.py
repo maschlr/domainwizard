@@ -151,7 +151,7 @@ class Listing(Base):
             else:
                 urls_to_be_deleted &= urls_not_in_batch
 
-        logger.info("Deleting outdated listings...")
+        logger.info(f"Deleting {len(urls_to_be_deleted)} outdated listings...")
         for url_batch in batched(urls_to_be_deleted, batch_size // 5):
             session.execute(delete(cls).where(cls.id.in_(url_to_id[url] for url in url_batch)))
             session.flush()
