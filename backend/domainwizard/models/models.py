@@ -32,7 +32,6 @@ from sqlalchemy import (
     LargeBinary,
     MetaData,
     Result,
-    delete,
     func,
     insert,
     select,
@@ -130,47 +129,29 @@ class Listing(Base):
         url_to_id = {
             row.url: row.id for row in session.execute(select(cls.url, cls.id).where(cls.link.like(f"%{source}%")))
         }
-        urls_with_embeddings = {
-            row.url
-            for row in session.execute(
-                select(cls.url).where(cls.embeddings.isnot(None)).where(cls.link.like(f"%{source}%"))
-            )
-        }
         tack = time.time()
         logger.info(f"Found {len(url_to_id)} listings in the database (took {tack - tick:.2f}s)")
-        urls_to_be_deleted = set()
         logger.info(f"Processing {source} data in batches...")
         for i, url_item_batch in enumerate(batched(listings, batch_size)):
-            listing_id_to_url, urls_not_in_batch = cls.process_items(
-                session, url_to_id, urls_with_embeddings, url_item_batch, batch_size=batch_size // 5, n_batch=i + 1
+            listing_id_to_url = cls.process_items(
+                session, url_to_id, url_item_batch, batch_size=batch_size // 5, n_batch=i + 1
             )
             for listing_id, url in listing_id_to_url.items():
                 yield listing_id, url
-            if i == 0:
-                urls_to_be_deleted = urls_not_in_batch
-            else:
-                urls_to_be_deleted &= urls_not_in_batch
-
-        logger.info(f"Deleting {len(urls_to_be_deleted)} outdated listings...")
-        for url_batch in batched(urls_to_be_deleted, batch_size // 5):
-            session.execute(delete(cls).where(cls.id.in_(url_to_id[url] for url in url_batch)))
-            session.flush()
 
     @classmethod
     def process_items(
         cls,
         session: Session,
         db_url_to_id: dict[str, int],
-        urls_with_embeddings: set[str],
         url_items: Iterable[dict],
         batch_size: int,
         n_batch: int,
-    ) -> tuple[dict[int, str], set[str]]:
+    ) -> dict[int, str]:
         url_to_data = {datum["url"]: datum for datum in url_items}
         listing_urls_in_batch = url_to_data.keys()
         listing_urls_to_be_updated = listing_urls_in_batch & db_url_to_id.keys()
         new_listing_urls = listing_urls_in_batch - db_url_to_id.keys()
-        urls_not_in_batch = (db_url_to_id.keys() - listing_urls_in_batch) & urls_with_embeddings
 
         fnames_for_update = [
             "auction_end_time",
@@ -203,7 +184,7 @@ class Listing(Base):
                 result_listing_id_to_url.update({listing.id: listing.url for listing in new_listings})
                 session.flush()
 
-        return result_listing_id_to_url, urls_not_in_batch
+        return result_listing_id_to_url
 
     @classmethod
     def get_by_embeddings(

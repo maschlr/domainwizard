@@ -1,3 +1,5 @@
+import datetime as dt
+
 from domainwizard.integrations.data import Adapters
 from domainwizard.models import (
     DataUpdate,
@@ -7,7 +9,7 @@ from domainwizard.models import (
     Session,
 )
 from loguru import logger
-from sqlalchemy import text
+from sqlalchemy import delete, text
 
 if __name__ == "__main__":
     for Adapter in Adapters:
@@ -22,6 +24,9 @@ if __name__ == "__main__":
                 for listing_id, listing_url in Listing.upsert_batch(session, dataset, adapter.name)
             )
             OpenAIEmbeddingBatchRequest.create_batch_requests(session, new_listing_id_to_url)
+
+    with Session.begin() as session:
+        session.execute(delete(Listing).where(Listing.auction_end_time < dt.datetime.now(dt.UTC)))
 
     with Session.begin() as session:
         logger.info("Creating DataUpdate entry...")
