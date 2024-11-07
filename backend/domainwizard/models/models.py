@@ -46,7 +46,7 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 from ulid import ULID
-from urllib3.exceptions import IncompleteRead, ProtocolError
+from urllib3.exceptions import ChunkedEncodingError, IncompleteRead, ProtocolError
 from urllib3.exceptions import TimeoutError as ConnectionTimeoutError
 
 from ..config import config
@@ -526,6 +526,7 @@ class OpenAIEmbeddingBatchRequest(Base):
             ConnectionTimeoutError,
             requests.exceptions.ConnectionError,
             ProtocolError,
+            ChunkedEncodingError,
         ):
             if retry < max_retries:
                 logger.warning(f"Download failed for {batch_id}. Retrying {retry}/{max_retries}")
