@@ -26,6 +26,7 @@ import requests
 import ulid
 from loguru import logger
 from pgvector.sqlalchemy import Vector
+from requests.exceptions import ChunkedEncodingError
 from sqlalchemy import (
     ForeignKey,
     Index,
@@ -46,7 +47,7 @@ from sqlalchemy.orm import (
     sessionmaker,
 )
 from ulid import ULID
-from urllib3.exceptions import ChunkedEncodingError, IncompleteRead, ProtocolError
+from urllib3.exceptions import IncompleteRead, ProtocolError
 from urllib3.exceptions import TimeoutError as ConnectionTimeoutError
 
 from ..config import config
